@@ -6,17 +6,32 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import javax.microedition.lcdui.Command;
+import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.List;
 
-public class WalnutCanvas extends Canvas {
+public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
     
     private Walnut midlet;
     private Image walnutImage;
     private Image enlargedWalnutImage;
-    private int walnuts = 0;
     
     private boolean isPressed = false; 
     
-    private static final String RECORD_STORE_NAME = "WalnutDB";
+    private long walnuts = 0;       
+    private int upgrades = 0;       
+    private long lastSaveTime = 0;  
+    private long offlineEarnings = 0; 
+    private volatile boolean isRunning = false; 
+    
+    private Command saveQuitCmd;
+    private Command storeCmd;
+    private Command backCmd;
+    private List storeList;
+    
+    private static final String RECORD_STORE_NAME = "WalnutDB_v2";
 
     public WalnutCanvas(Walnut midlet) {
         this.midlet = midlet;
@@ -28,7 +43,49 @@ public class WalnutCanvas extends Canvas {
             e.printStackTrace();
         }
         
-        loadWalnuts();
+        loadData();
+
+        saveQuitCmd = new Command("Save & Quit", Command.EXIT, 1);
+        storeCmd = new Command("Open Store", Command.ITEM, 2); 
+        backCmd = new Command("Back", Command.BACK, 1);
+        
+        addCommand(saveQuitCmd);
+        addCommand(storeCmd);
+        setCommandListener(this);
+        
+        isRunning = true;
+        new Thread(this).start();
+    }
+
+    public void commandAction(Command c, Displayable d) {
+        if (d == this) { 
+            if (c == saveQuitCmd) {
+                isRunning = false; 
+                saveData();
+                midlet.notifyDestroyed();
+            } else if (c == storeCmd) {
+                openStore();
+            }
+        } else if (d == storeList) { 
+            if (c == backCmd) {
+                Display.getDisplay(midlet).setCurrent(this);
+            } else if (c == List.SELECT_COMMAND) {
+                buyItem(storeList.getSelectedIndex());
+            }
+        }
+    }
+
+    public void run() {
+        while (isRunning) {
+            try {
+                Thread.sleep(1000); 
+            } catch (InterruptedException e) {}
+            
+            if (upgrades > 0) {
+                walnuts += upgrades;
+                repaint();
+            }
+        }
     }
 
     protected void paint(Graphics g) {
@@ -40,13 +97,22 @@ public class WalnutCanvas extends Canvas {
 
         g.setColor(0xFFFFFF);
         g.drawString("Walnuts: " + walnuts, getWidth() / 2, 10, Graphics.HCENTER | Graphics.TOP);
+
+        g.setColor(0xAAAAAA); 
+        g.drawString("Per Second: " + upgrades, getWidth() / 2, 30, Graphics.HCENTER | Graphics.TOP);
+        
+        if (offlineEarnings > 0) {
+            g.setColor(0x00FF00); 
+            g.drawString("Offline earnings: +" + offlineEarnings, getWidth() / 2, getHeight() - 20, Graphics.HCENTER | Graphics.BOTTOM);
+        }
     }
 
     protected void keyPressed(int keyCode) {
         if (getGameAction(keyCode) == FIRE) {
             isPressed = true;
             walnuts++;
-            saveWalnuts();
+            offlineEarnings = 0;
+            saveData();
             repaint();
         }
     }
@@ -79,7 +145,7 @@ public class WalnutCanvas extends Canvas {
         return Image.createRGBImage(dstPixels, dstW, dstH, true);
     }
 
-    private void loadWalnuts() {
+    private void loadData() {
         RecordStore rs = null;
         try {
             rs = RecordStore.openRecordStore(RECORD_STORE_NAME, true);
@@ -89,13 +155,24 @@ public class WalnutCanvas extends Canvas {
                 ByteArrayInputStream bais = new ByteArrayInputStream(data);
                 DataInputStream dis = new DataInputStream(bais);
                 
-                walnuts = dis.readInt();
+                walnuts = dis.readLong();
+                upgrades = dis.readInt();
+                lastSaveTime = dis.readLong();
                 
                 dis.close();
                 bais.close();
+                
+                if (lastSaveTime > 0 && upgrades > 0) {
+                    long currentTime = System.currentTimeMillis();
+                    long secondsPassed = (currentTime - lastSaveTime) / 1000;
+                    
+                    if (secondsPassed > 0) {
+                        offlineEarnings = secondsPassed * upgrades;
+                        walnuts += offlineEarnings;
+                    }
+                }
             }
         } catch (Exception e) {
-            e.printStackTrace();
         } finally {
             if (rs != null) {
                 try { rs.closeRecordStore(); } catch (Exception e) {}
@@ -103,14 +180,18 @@ public class WalnutCanvas extends Canvas {
         }
     }
 
-    private void saveWalnuts() {
+    private void saveData() {
         RecordStore rs = null;
         try {
             rs = RecordStore.openRecordStore(RECORD_STORE_NAME, true);
             
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(baos);
-            dos.writeInt(walnuts);
+            
+            dos.writeLong(walnuts);
+            dos.writeInt(upgrades);
+            dos.writeLong(System.currentTimeMillis()); 
+            
             byte[] data = baos.toByteArray();
             
             dos.close();
@@ -122,11 +203,47 @@ public class WalnutCanvas extends Canvas {
                 rs.addRecord(data, 0, data.length);
             }
         } catch (Exception e) {
-            e.printStackTrace();
         } finally {
             if (rs != null) {
                 try { rs.closeRecordStore(); } catch (Exception e) {}
             }
+        }
+    }
+
+    private void openStore() {
+        storeList = new List("Store (Walnuts: " + walnuts + ")", List.IMPLICIT);
+        
+        storeList.append("Nutcracker (+1/s) - 10W", null);
+        storeList.append("Squirrel (+5/s) - 50W", null);
+        storeList.append("Walnut Tree (+15/s) - 150W", null);
+        
+        storeList.addCommand(backCmd);
+        storeList.setCommandListener(this);
+        
+        Display.getDisplay(midlet).setCurrent(storeList);
+    }
+
+    private void buyItem(int index) {
+        boolean bought = false;
+        
+        if (index == 0 && walnuts >= 10) {
+            walnuts -= 10;
+            upgrades += 1;
+            bought = true;
+        } else if (index == 1 && walnuts >= 50) {
+            walnuts -= 50;
+            upgrades += 5;
+            bought = true;
+        } else if (index == 2 && walnuts >= 150) {
+            walnuts -= 150;
+            upgrades += 15;
+            bought = true;
+        }
+        
+        if (bought) {
+            saveData();
+            offlineEarnings = 0;
+            storeList.setTitle("Store (Walnuts: " + walnuts + ")");
         }
     }
 }
