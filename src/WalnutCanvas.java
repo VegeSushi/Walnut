@@ -230,11 +230,20 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
         }
     }
 
+    private int getCurrentCost(int index) {
+        double cost = itemCosts[index];
+        for (int i = 0; i < itemCounts[index]; i++) {
+            cost *= 1.15;
+        }
+        return (int) cost;
+    }
+
     private void openStore() {
         storeList = new List("Store (Walnuts: " + walnuts + ")", List.IMPLICIT);
         
         for(int i = 0; i < totalStoreItems; i++) {
-            String label = itemNames[i] + " (" + itemCounts[i] + " owned) - " + itemCosts[i] + "W";
+            int currentCost = getCurrentCost(i);
+            String label = itemNames[i] + " (" + itemCounts[i] + " owned) - " + currentCost + "W";
             storeList.append(label, null);
         }
         
@@ -245,15 +254,20 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
 
     private void buyItem(int index) {
         if (index >= 0 && index < totalStoreItems) {
-            if (walnuts >= itemCosts[index]) {
-                walnuts -= itemCosts[index];
+            
+            int currentCost = getCurrentCost(index);
+            
+            if (walnuts >= currentCost) {
+                walnuts -= currentCost;
                 upgrades += itemIncomes[index];
                 itemCounts[index]++;
                 
                 saveData(); 
                 offlineEarnings = 0; 
                 
-                String newLabel = itemNames[index] + " (" + itemCounts[index] + " owned) - " + itemCosts[index] + "W";
+                int nextCost = getCurrentCost(index);
+                
+                String newLabel = itemNames[index] + " (" + itemCounts[index] + " owned) - " + nextCost + "W";
                 storeList.set(index, newLabel, null);
                 storeList.setTitle("Store (Walnuts: " + walnuts + ")");
             }
