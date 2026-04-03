@@ -38,7 +38,7 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
     private Command backCmd;
     private List storeList;
     
-    private static final String RECORD_STORE_NAME = "WalnutDB_v3";
+    private static final String RECORD_STORE_NAME = "WalnutDB_v4";
 
     public WalnutCanvas(Walnut midlet) {
         this.midlet = midlet;
@@ -167,6 +167,13 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
                 upgrades = dis.readInt();
                 lastSaveTime = dis.readLong();
                 
+                if (dis.available() > 0) {
+                    int savedItemsCount = dis.readInt();
+                    for(int i = 0; i < savedItemsCount && i < totalStoreItems; i++) {
+                        itemCounts[i] = dis.readInt();
+                    }
+                }
+                
                 dis.close();
                 bais.close();
                 
@@ -199,6 +206,11 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
             dos.writeLong(walnuts);
             dos.writeInt(upgrades);
             dos.writeLong(System.currentTimeMillis()); 
+            
+            dos.writeInt(totalStoreItems);
+            for(int i = 0; i < totalStoreItems; i++) {
+                dos.writeInt(itemCounts[i]);
+            }
             
             byte[] data = baos.toByteArray();
             
