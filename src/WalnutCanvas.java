@@ -11,6 +11,7 @@ import javax.microedition.lcdui.CommandListener;
 import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.Display;
 import javax.microedition.lcdui.List;
+import java.io.InputStream;
 
 public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
     
@@ -18,6 +19,12 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
     private Image walnutImage;
     private Image enlargedWalnutImage;
     
+    private String[] itemNames;
+    private int[] itemCosts;
+    private int[] itemIncomes;
+    private int[] itemCounts;
+    private int totalStoreItems = 0;
+
     private boolean isPressed = false; 
     
     private long walnuts = 0;       
@@ -31,7 +38,7 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
     private Command backCmd;
     private List storeList;
     
-    private static final String RECORD_STORE_NAME = "WalnutDB_v2";
+    private static final String RECORD_STORE_NAME = "WalnutDB_v3";
 
     public WalnutCanvas(Walnut midlet) {
         this.midlet = midlet;
@@ -43,6 +50,7 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
             e.printStackTrace();
         }
         
+        loadStoreConfig();
         loadData();
 
         saveQuitCmd = new Command("Save & Quit", Command.EXIT, 1);
@@ -213,37 +221,83 @@ public class WalnutCanvas extends Canvas implements CommandListener, Runnable {
     private void openStore() {
         storeList = new List("Store (Walnuts: " + walnuts + ")", List.IMPLICIT);
         
-        storeList.append("Nutcracker (+1/s) - 10W", null);
-        storeList.append("Squirrel (+5/s) - 50W", null);
-        storeList.append("Walnut Tree (+15/s) - 150W", null);
+        for(int i = 0; i < totalStoreItems; i++) {
+            String label = itemNames[i] + " (" + itemCounts[i] + " owned) - " + itemCosts[i] + "W";
+            storeList.append(label, null);
+        }
         
         storeList.addCommand(backCmd);
         storeList.setCommandListener(this);
-        
         Display.getDisplay(midlet).setCurrent(storeList);
     }
 
     private void buyItem(int index) {
-        boolean bought = false;
-        
-        if (index == 0 && walnuts >= 10) {
-            walnuts -= 10;
-            upgrades += 1;
-            bought = true;
-        } else if (index == 1 && walnuts >= 50) {
-            walnuts -= 50;
-            upgrades += 5;
-            bought = true;
-        } else if (index == 2 && walnuts >= 150) {
-            walnuts -= 150;
-            upgrades += 15;
-            bought = true;
+        if (index >= 0 && index < totalStoreItems) {
+            if (walnuts >= itemCosts[index]) {
+                walnuts -= itemCosts[index];
+                upgrades += itemIncomes[index];
+                itemCounts[index]++;
+                
+                saveData(); 
+                offlineEarnings = 0; 
+                
+                String newLabel = itemNames[index] + " (" + itemCounts[index] + " owned) - " + itemCosts[index] + "W";
+                storeList.set(index, newLabel, null);
+                storeList.setTitle("Store (Walnuts: " + walnuts + ")");
+            }
         }
-        
-        if (bought) {
-            saveData();
-            offlineEarnings = 0;
-            storeList.setTitle("Store (Walnuts: " + walnuts + ")");
+    }
+
+    private void loadStoreConfig() {
+        try {
+            InputStream is = getClass().getResourceAsStream("/store.txt");
+            if (is == null) {
+                System.out.println("Could not find store.txt!");
+                return;
+            }
+            
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            int b;
+            while ((b = is.read()) != -1) {
+                baos.write(b);
+            }
+            String content = new String(baos.toByteArray());
+            is.close();
+            
+            totalStoreItems = 0;
+            for (int i = 0; i < content.length(); i++) {
+                if (content.charAt(i) == '\n') totalStoreItems++;
+            }
+            if (!content.endsWith("\n")) totalStoreItems++;
+            
+            itemNames = new String[totalStoreItems];
+            itemCosts = new int[totalStoreItems];
+            itemIncomes = new int[totalStoreItems];
+            itemCounts = new int[totalStoreItems];
+            
+            int itemIndex = 0;
+            int lineStart = 0;
+            for (int i = 0; i <= content.length(); i++) {
+                if (i == content.length() || content.charAt(i) == '\n') {
+                    String line = content.substring(lineStart, i).trim();
+                    lineStart = i + 1;
+                    
+                    if (line.length() > 0) {
+                        int comma1 = line.indexOf(',');
+                        int comma2 = line.indexOf(',', comma1 + 1);
+                        
+                        if (comma1 != -1 && comma2 != -1) {
+                            itemNames[itemIndex] = line.substring(0, comma1).trim();
+                            itemCosts[itemIndex] = Integer.parseInt(line.substring(comma1 + 1, comma2).trim());
+                            itemIncomes[itemIndex] = Integer.parseInt(line.substring(comma2 + 1).trim());
+                            itemIndex++;
+                        }
+                    }
+                }
+            }
+            totalStoreItems = itemIndex;
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 }

@@ -1,0 +1,4 @@
+Nutcracker,10,1
+Squirrel,50,5
+Walnut Tree,150,15
+Walnut Farm,1000,50
